@@ -1,0 +1,116 @@
+---
+title: "PSTAT 131 HW 4"
+author: "Jay Shreedhar"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+set.seed(3945)
+library(tidymodels)
+library(tidyverse)
+library(ISLR)
+library(ISLR2)
+library(MASS)
+library(klaR)
+library(dplyr)
+library(discrim)
+setwd("/Users/shobhanashreedhar/Downloads/homework-4/data")
+titanic <- read.csv(file="titanic.csv")
+```
+<br />**Question 1:**<br />
+```{r}
+
+titanic_split <- initial_split(titanic, prop = 0.7, strata = survived)
+titanic_train <- training(titanic_split)
+titanic_test <- testing(titanic_split)
+
+```
+<br /><br />
+**Question 2:**<br />
+```{r}
+titanic_fold <- vfold_cv(titanic_train, v = 10)
+
+```
+<br /><br />
+**Question 3:**<br />
+*k*-fold cross-validation is when we split the data into *k* sets, then fit the model on all but 1. Then we compute MSE for the remaining set, hold out a different set, and repeat the process *k* times. We do this in order to make sure our data isn't biased because of the smaller training set. Cross-validation can result in a much more accurate model. If we used the entire training set, that would be bootstrap resampling.
+<br /><br />
+**Question 4:**<br />
+```{r}
+
+titanic_recipe <- 
+  recipe(survived ~ pclass + sex + age + sib_sp + parch + fare, data=titanic_train) %>% step_impute_linear(age) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(terms = ~ starts_with("sex"):fare) %>%
+  step_interact(terms = ~ age:fare)
+
+log_reg <- logistic_reg() %>% 
+  set_engine("glm") %>% 
+  set_mode("classification")
+
+log_wkflow <- workflow() %>% 
+  add_model(log_reg) %>% 
+  add_recipe(titanic_recipe)
+
+lindisc <- discrim_linear() %>% 
+  set_engine("MASS") %>% 
+  set_mode("classification")
+
+lin_wkflow <- workflow() %>% 
+  add_model(lindisc) %>% 
+  add_recipe(titanic_recipe)
+
+
+quadisc <- discrim_quad() %>% 
+  set_engine("MASS") %>% 
+  set_mode("classification")
+
+quad_wkflow <- workflow() %>% 
+  add_model(quadisc) %>% 
+  add_recipe(titanic_recipe)
+
+
+```
+<br />We will be fitting 30 models total, across all folds.
+<br /><br />
+**Question 5:**<br />
+```{r}
+
+log_fit <- log_wkflow %>% fit_resamples(titanic_fold)
+lin_fit <- lin_wkflow %>% fit_resamples(titanic_fold)
+quad_fit <- quad_wkflow %>% fit_resamples(titanic_fold)
+
+
+```
+<br /><br />
+**Question 6:**<br />
+```{r}
+
+collect_metrics(log_fit)
+collect_metrics(lin_fit)
+collect_metrics(quad_fit)
+
+```
+<br />The LDA model performed the best - while its accuracy was between that of the QDA model and the logistic model, with the logistic model performing highest, the LDA model's standard error of accuracy was the lowest of all three. 
+<br /><br />
+**Question 7:**<br />
+```{r}
+
+final_fit <- lin_wkflow %>% fit(titanic_train)
+
+```
+<br /><br />
+**Question 8:**<br />
+```{r}
+
+predict(final_fit, new_data = titanic_test) %>% bind_cols(titanic_test) %>% accuracy(truth=as.factor(survived), estimate=.pred_class)
+
+```
+<br />My accuracy is 0.7932961, while the average across folds is 0.8003243. THe final accuracy is lower on the testing data, meaning there may have been some overfitting.
